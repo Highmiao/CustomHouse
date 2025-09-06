@@ -157,7 +157,8 @@ public class WallItemEditor : Editor
             !wallItem.WallConfig.showInSceneView)   // 本地开关
             return;
         
-        DrawWallVisualization(wallItem);
+        // 绘制已由GridPreviewSystem统一处理，只保留标签显示
+        // DrawWallVisualization(wallItem);
         
         // 显示墙面信息标签
         if (wallItem.WallConfig.showInSceneView)

@@ -45,10 +45,12 @@ public class GridVisualizationEditor : Editor
         if (!gridViz.ShowGridSystem)
             return;
         
-        DrawGrid();
-        DrawOccupiedCells();
-        DrawAllFurnitureGrids();
-        DrawAllWallGrids();
+        // 不在这里绘制，统一由GridPreviewSystem处理
+        // DrawGrid();
+        // DrawOccupiedCells();
+        // DrawAllFurnitureGrids();
+        // DrawAllWallGrids();
+        // DrawAllFloorGrids();
         
         // 让Scene视图持续更新
         if (Event.current.type == EventType.Repaint)
@@ -236,6 +238,19 @@ public class GridVisualizationEditor : Editor
         }
     }
     
+    private void DrawAllFloorGrids()
+    {
+        var allFloors = FindObjectsOfType<FloorItem>();
+        
+        foreach (var floor in allFloors)
+        {
+            if (floor.GridSystem == gridViz && floor.FloorConfig.showInSceneView)
+            {
+                DrawFloorOccupancy(floor);
+            }
+        }
+    }
+    
     private void DrawWallOccupancy(WallItem wall)
     {
         var basePositions = wall.GetBaseOccupiedGridPositions();
@@ -290,5 +305,109 @@ public class GridVisualizationEditor : Editor
                 }
             }
         }
+    }
+    
+    private void DrawFloorOccupancy(FloorItem floor)
+    {
+        var floorPositions = floor.GetFloorGridPositions();
+        bool isValid = floor.IsValidPosition();
+        
+        // 绘制地面格子
+        Color floorColor = isValid ? floor.FloorConfig.floorColor : Color.red;
+        floorColor.a = gridViz.Settings.occupiedAlpha;
+        
+        Handles.color = floorColor;
+        
+        float floorHeight = floor.FloorConfig.floorHeight;
+        
+        foreach (var gridPos in floorPositions)
+        {
+            DrawFloorGridCell(gridPos, floorHeight);
+        }
+        
+        // 绘制地面格子边框
+        Handles.color = new Color(floorColor.r, floorColor.g, floorColor.b, 1f);
+        foreach (var gridPos in floorPositions)
+        {
+            DrawFloorGridCellBorder(gridPos, floorHeight);
+        }
+        
+        // 绘制表面格子
+        if (floor.FloorConfig.showSurfaceInSceneView && floor.FloorConfig.providesSurface)
+        {
+            var surfacePositions = floor.GetSurfaceGridPositions();
+            
+            Color surfaceColor = floor.FloorConfig.surfaceColor;
+            surfaceColor.a = gridViz.Settings.occupiedAlpha;
+            
+            Handles.color = surfaceColor;
+            
+            // 计算表面高度
+            float surfaceHeight = floor.FloorConfig.floorHeight + floor.FloorConfig.thickness;
+            
+            foreach (var gridPos in surfacePositions)
+            {
+                DrawFloorSurfaceGridCell(gridPos, surfaceHeight);
+            }
+            
+            // 绘制表面格子边框
+            Handles.color = new Color(surfaceColor.r, surfaceColor.g, surfaceColor.b, 1f);
+            foreach (var gridPos in surfacePositions)
+            {
+                DrawFloorSurfaceGridCellBorder(gridPos, surfaceHeight);
+            }
+        }
+    }
+    
+    private void DrawFloorGridCell(Vector2Int gridPos, float height)
+    {
+        Vector3[] corners = GetFloorGridCellCorners(gridPos, height);
+        Handles.DrawAAConvexPolygon(corners);
+    }
+    
+    private void DrawFloorGridCellBorder(Vector2Int gridPos, float height)
+    {
+        Vector3[] corners = GetFloorGridCellCorners(gridPos, height);
+        for (int i = 0; i < corners.Length; i++)
+        {
+            int next = (i + 1) % corners.Length;
+            Handles.DrawLine(corners[i], corners[next]);
+        }
+    }
+    
+    private void DrawFloorSurfaceGridCell(Vector2Int gridPos, float height)
+    {
+        Vector3[] corners = GetFloorSurfaceGridCellCorners(gridPos, height);
+        Handles.DrawAAConvexPolygon(corners);
+    }
+    
+    private void DrawFloorSurfaceGridCellBorder(Vector2Int gridPos, float height)
+    {
+        Vector3[] corners = GetFloorSurfaceGridCellCorners(gridPos, height);
+        for (int i = 0; i < corners.Length; i++)
+        {
+            int next = (i + 1) % corners.Length;
+            Handles.DrawLine(corners[i], corners[next]);
+        }
+    }
+    
+    private Vector3[] GetFloorGridCellCorners(Vector2Int gridPos, float height)
+    {
+        Vector3 bottomLeft = gridViz.GridToWorld(gridPos, height);
+        Vector3 bottomRight = gridViz.GridToWorld(gridPos + Vector2Int.right, height);
+        Vector3 topRight = gridViz.GridToWorld(gridPos + Vector2Int.one, height);
+        Vector3 topLeft = gridViz.GridToWorld(gridPos + Vector2Int.up, height);
+        
+        return new Vector3[] { bottomLeft, bottomRight, topRight, topLeft };
+    }
+    
+    private Vector3[] GetFloorSurfaceGridCellCorners(Vector2Int gridPos, float height)
+    {
+        Vector3 bottomLeft = gridViz.GridToWorld(gridPos, height);
+        Vector3 bottomRight = gridViz.GridToWorld(gridPos + Vector2Int.right, height);
+        Vector3 topRight = gridViz.GridToWorld(gridPos + Vector2Int.one, height);
+        Vector3 topLeft = gridViz.GridToWorld(gridPos + Vector2Int.up, height);
+        
+        return new Vector3[] { bottomLeft, bottomRight, topRight, topLeft };
     }
 }

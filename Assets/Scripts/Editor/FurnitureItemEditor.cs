@@ -106,24 +106,19 @@ public class FurnitureItemEditor : Editor
     
     void OnSceneGUI()
     {
-        // 在Scene视图中显示网格坐标和绘制格子
+        // 现在统一由GridPreviewSystem处理所有绘制，避免重复绘制
+        // 只保留标签显示
         if (furniture.GridSystem != null && 
             furniture.GridSystem.ShowGridSystem &&  // 检查主开关
             furniture.Occupancy.showInSceneView)    // 检查本地开关
         {
-            // 检查是否当前选中的是GridVisualization，如果是则不重复绘制
-            bool isGridVisualizationSelected = Selection.activeObject is GridVisualization;
-            
             Vector2Int gridPos = furniture.GridSystem.WorldToGrid(furniture.transform.position);
             // 在XY平面上，标签显示在物体上方
             Handles.Label(furniture.transform.position + Vector3.up * 1f, 
                 $"Grid: ({gridPos.x}, {gridPos.y})");
                 
-            // 只有在GridVisualization没有被选中时才绘制格子，避免重复
-            if (!isGridVisualizationSelected)
-            {
-                DrawFurnitureGrids();
-            }
+            // 绘制已由GridPreviewSystem统一处理，不再在这里重复绘制
+            // DrawFurnitureGrids();
         }
     }
     
