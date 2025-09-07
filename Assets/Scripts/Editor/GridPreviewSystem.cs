@@ -86,7 +86,7 @@ public class GridPreviewSystem : EditorWindow
     public static GridVisualization CurrentGridSystem => currentGridSystem;
     
     // 表面高亮控制
-    private static bool enableSurfaceHighlight = true;
+    private static bool enableSurfaceHighlight = false;
     private static Color surfaceHighlightColor = Color.yellow;
     private static float surfaceHighlightAlpha = 0.3f;
     
@@ -99,6 +99,7 @@ public class GridPreviewSystem : EditorWindow
     private static FurnitureItem[] cachedFurniture = null;
     private static MonoBehaviour[] cachedWalls = null;
     private static MonoBehaviour[] cachedFloors = null;
+    private static MonoBehaviour[] cachedWallMountables = null;
     private static double lastComponentCacheTime = 0;
     private const double CACHE_REFRESH_INTERVAL = 1.0; // 每秒刷新一次组件缓存
     
@@ -228,9 +229,10 @@ public class GridPreviewSystem : EditorWindow
         
         // 收集所有需要绘制的几何体
         CollectGridGeometry(batches);
-        CollectFurnitureGeometry(batches);
-        CollectWallGeometry(batches);
         CollectFloorGeometry(batches);
+        CollectWallGeometry(batches);
+        CollectFurnitureGeometry(batches);
+        CollectWallMountableGeometry(batches);
         
         // 批量绘制
         foreach (var kvp in batches)
@@ -415,6 +417,198 @@ public class GridPreviewSystem : EditorWindow
     }
     
     /// <summary>
+    /// 收集墙面挂载物体几何体
+    /// </summary>
+    private static void CollectWallMountableGeometry(Dictionary<string, BatchDrawData> batches)
+    {
+        RefreshComponentCache();
+        
+        if (cachedWallMountables == null) return;
+        
+        foreach (var item in cachedWallMountables)
+        {
+            // 使用反射检查是否显示
+            var configProperty = item.GetType().GetProperty("MountConfig");
+            if (configProperty == null) continue;
+            
+            var config = configProperty.GetValue(item);
+            var showField = config.GetType().GetField("showInSceneView");
+            bool show = showField != null ? (bool)showField.GetValue(config) : true;
+            
+            if (!show) continue;
+            
+            // 挂载区域
+            AddWallMountOccupancyToBatch(batches, item);
+            
+            // 提供的表面
+            var showSurfaceField = config.GetType().GetField("showSurfaceInSceneView");
+            bool showSurface = showSurfaceField != null ? (bool)showSurfaceField.GetValue(config) : true;
+            
+            var providesSurfaceField = config.GetType().GetField("providesSurface");
+            bool providesSurface = providesSurfaceField != null ? (bool)providesSurfaceField.GetValue(config) : false;
+            
+            if (showSurface && providesSurface)
+            {
+                AddWallMountSurfaceToBatch(batches, item);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 添加墙面挂载占用到批次
+    /// </summary>
+    private static void AddWallMountOccupancyToBatch(Dictionary<string, BatchDrawData> batches, object wallMountItem)
+    {
+        // 使用反射获取墙面挂载物信息
+        var itemType = wallMountItem.GetType();
+        
+        // 获取 IsValidPosition 方法
+        var isValidMethod = itemType.GetMethod("IsValidPosition");
+        bool isValid = isValidMethod != null ? (bool)isValidMethod.Invoke(wallMountItem, null) : true;
+        
+        // 获取配置
+        var configProperty = itemType.GetProperty("MountConfig");
+        if (configProperty == null) return;
+        
+        var config = configProperty.GetValue(wallMountItem);
+        var configType = config.GetType();
+        
+        // 获取颜色
+        var mountColorField = configType.GetField("mountColor");
+        Color color = mountColorField != null ? (Color)mountColorField.GetValue(config) : new Color(1f, 0.5f, 0f, 0.7f);
+        
+        if (!isValid) color = Color.red;
+        color.a = currentGridSystem.Settings.occupiedAlpha;
+        
+        // 填充批次
+        string fillKey = $"WallMountFill_{ColorToString(color)}";
+        if (!batches.ContainsKey(fillKey))
+        {
+            batches[fillKey] = new BatchDrawData(color, true);
+        }
+        
+        // 边框批次
+        Color borderColor = new Color(color.r, color.g, color.b, 1f);
+        string borderKey = $"WallMountBorder_{ColorToString(borderColor)}";
+        if (!batches.ContainsKey(borderKey))
+        {
+            batches[borderKey] = new BatchDrawData(borderColor, false);
+        }
+        
+        var fillBatch = batches[fillKey];
+        var borderBatch = batches[borderKey];
+        
+        // 获取占用位置
+        var getOccupiedMethod = itemType.GetMethod("GetWallOccupiedGridPositions");
+        if (getOccupiedMethod != null)
+        {
+            var positions = (List<Vector2Int>)getOccupiedMethod.Invoke(wallMountItem, null);
+            
+            // 获取挂载高度
+            var getHeightMethod = itemType.GetMethod("GetMountWorldHeight");
+            float height = getHeightMethod != null ? (float)getHeightMethod.Invoke(wallMountItem, null) : 0f;
+            
+            // 获取挂载方向
+            var directionProperty = itemType.GetProperty("MountDirection");
+            var direction = directionProperty != null ? directionProperty.GetValue(wallMountItem) : null;
+            
+            foreach (var gridPos in positions)
+            {
+                // 对于墙面挂载物，使用特殊的墙面格子形状
+                Vector3[] corners;
+                if (direction != null)
+                {
+                    // 尝试转换枚举值
+                    if (System.Enum.TryParse(direction.ToString(), out WallDirection wallDir))
+                    {
+                        corners = GetWallSurfaceCornersAtHeight(gridPos, height, wallDir);
+                    }
+                    else
+                    {
+                        corners = GetGridCellCornersAtHeight(gridPos, height);
+                    }
+                }
+                else
+                {
+                    corners = GetGridCellCornersAtHeight(gridPos, height);
+                }
+                
+                AddQuadToBatch(fillBatch, corners);
+                AddQuadBorderToBatch(borderBatch, corners);
+            }
+        }
+        
+        batches[fillKey] = fillBatch;
+        batches[borderKey] = borderBatch;
+    }
+    
+    /// <summary>
+    /// 添加墙面挂载表面到批次
+    /// </summary>
+    private static void AddWallMountSurfaceToBatch(Dictionary<string, BatchDrawData> batches, object wallMountItem)
+    {
+        // 使用反射获取墙面挂载物信息
+        var itemType = wallMountItem.GetType();
+        
+        // 获取配置
+        var configProperty = itemType.GetProperty("MountConfig");
+        if (configProperty == null) return;
+        
+        var config = configProperty.GetValue(wallMountItem);
+        var configType = config.GetType();
+        
+        // 获取表面颜色
+        var surfaceColorField = configType.GetField("surfaceColor");
+        Color color = surfaceColorField != null ? (Color)surfaceColorField.GetValue(config) : new Color(0f, 1f, 0.5f, 0.5f);
+        color.a = currentGridSystem.Settings.surfaceAlpha;
+        
+        // 填充批次
+        string fillKey = $"SurfaceFill_{ColorToString(color)}";
+        if (!batches.ContainsKey(fillKey))
+        {
+            batches[fillKey] = new BatchDrawData(color, true);
+        }
+        
+        // 边框批次
+        Color borderColor = new Color(color.r, color.g, color.b, 1f);
+        string borderKey = $"SurfaceBorder_{ColorToString(borderColor)}";
+        if (!batches.ContainsKey(borderKey))
+        {
+            batches[borderKey] = new BatchDrawData(borderColor, false);
+        }
+        
+        var fillBatch = batches[fillKey];
+        var borderBatch = batches[borderKey];
+        
+        // 获取表面位置
+        var getSurfaceMethod = itemType.GetMethod("GetProvidedSurfacePositions");
+        if (getSurfaceMethod != null)
+        {
+            var surfacePositions = (List<Vector2Int>)getSurfaceMethod.Invoke(wallMountItem, null);
+            
+            // 获取表面高度
+            var getHeightMethod = itemType.GetMethod("GetMountWorldHeight");
+            float baseHeight = getHeightMethod != null ? (float)getHeightMethod.Invoke(wallMountItem, null) : 0f;
+            
+            // 获取表面突出距离
+            var protrusionField = configType.GetField("surfaceProtrusion");
+            float protrusion = protrusionField != null ? (float)protrusionField.GetValue(config) : 0.5f;
+            
+            float surfaceHeight = baseHeight + protrusion;
+            
+            foreach (var gridPos in surfacePositions)
+            {
+                Vector3[] corners = GetGridCellCornersAtHeight(gridPos, surfaceHeight);
+                AddQuadToBatch(fillBatch, corners);
+                AddQuadBorderToBatch(borderBatch, corners);
+            }
+        }
+        
+        batches[fillKey] = fillBatch;
+        batches[borderKey] = borderBatch;
+    }
+    
+    /// <summary>
     /// 收集墙体几何体
     /// </summary>
     private static void CollectWallGeometry(Dictionary<string, BatchDrawData> batches)
@@ -527,13 +721,13 @@ public class GridPreviewSystem : EditorWindow
             for (int h = 0; h < wall.WallConfig.wallHeight; h++)
             {
                 // 墙面应该在墙体旁边，使用法向量偏移
-                Vector2Int surfaceGridPos = baseGridPos + normalVector;
+                Vector2Int surfaceGridPos = baseGridPos;
                 
                 // 计算墙面高度
                 float surfaceHeight = h * currentGridSystem.Settings.heightPerLevel;
                 
-                // 墙面应该绘制为垂直的平行四边形，不是水平的菱形
-                Vector3[] wallCorners = GetWallSurfaceCornersAtHeight(surfaceGridPos, surfaceHeight);
+                // 墙面应该绘制为垂直的平行四边形，根据墙面方向确定形状
+                Vector3[] wallCorners = GetWallSurfaceCornersAtHeight(surfaceGridPos, surfaceHeight, wall.WallConfig.direction);
                 AddQuadToBatch(fillBatch, wallCorners);
                 AddQuadBorderToBatch(borderBatch, wallCorners);
             }
@@ -1151,21 +1345,53 @@ public class GridPreviewSystem : EditorWindow
     }
     
     /// <summary>
-    /// 获取墙面格子的角点 - 垂直的平行四边形
+    /// 获取墙面格子的角点 - 垂直的平行四边形，根据墙面方向区分
     /// </summary>
-    private static Vector3[] GetWallSurfaceCornersAtHeight(Vector2Int gridPos, float height)
+    private static Vector3[] GetWallSurfaceCornersAtHeight(Vector2Int gridPos, float height, WallDirection wallDirection)
     {
         if (currentGridSystem == null) return new Vector3[0];
         
         float heightPerLevel = currentGridSystem.Settings.heightPerLevel;
         
-        // 墙面格子应该是垂直的平行四边形，从当前高度到下一个高度
-        Vector3 bottomLeft = currentGridSystem.GridToWorld(gridPos, height);
-        Vector3 bottomRight = currentGridSystem.GridToWorld(gridPos + Vector2Int.right, height);
-        Vector3 topRight = currentGridSystem.GridToWorld(gridPos + Vector2Int.right, height + heightPerLevel);
-        Vector3 topLeft = currentGridSystem.GridToWorld(gridPos, height + heightPerLevel);
+        // 根据墙面方向确定墙面格子的形状
+        Vector3 bottomLeft, bottomRight, topLeft, topRight;
+        
+        switch (wallDirection)
+        {
+            case WallDirection.North:
+            case WallDirection.South:
+                // 南北墙：墙面格子的顶边平行于等距投影的南北向边
+                bottomLeft = currentGridSystem.GridToWorld(gridPos, height);
+                bottomRight = currentGridSystem.GridToWorld(gridPos + Vector2Int.up, height);
+                topLeft = currentGridSystem.GridToWorld(gridPos, height + heightPerLevel);
+                topRight = currentGridSystem.GridToWorld(gridPos + Vector2Int.up, height + heightPerLevel);
+                break;
+                
+            case WallDirection.East:
+            case WallDirection.West:
+                // 东西墙：墙面格子的顶边平行于等距投影的东西向边
+                bottomLeft = currentGridSystem.GridToWorld(gridPos, height);
+                bottomRight = currentGridSystem.GridToWorld(gridPos + Vector2Int.right, height);
+                topLeft = currentGridSystem.GridToWorld(gridPos, height + heightPerLevel);
+                topRight = currentGridSystem.GridToWorld(gridPos + Vector2Int.right, height + heightPerLevel);
+                break;
+                
+            default:
+                // 默认情况，使用原来的逻辑
+                bottomLeft = currentGridSystem.GridToWorld(gridPos, height);
+                bottomRight = currentGridSystem.GridToWorld(gridPos + Vector2Int.right, height);
+                topLeft = currentGridSystem.GridToWorld(gridPos, height + heightPerLevel);
+                topRight = currentGridSystem.GridToWorld(gridPos + Vector2Int.right, height + heightPerLevel);
+                break;
+        }
         
         return new Vector3[] { bottomLeft, bottomRight, topRight, topLeft };
+    }
+
+    // 重载方法，保持向后兼容（使用默认方向）
+    private static Vector3[] GetWallSurfaceCornersAtHeight(Vector2Int gridPos, float height)
+    {
+        return GetWallSurfaceCornersAtHeight(gridPos, height, WallDirection.North);
     }
     
     // 绘制墙面格子
@@ -1426,11 +1652,14 @@ public class GridPreviewSystem : EditorWindow
         var furniture = FindObjectsOfType<FurnitureItem>();
         var wallComponents = Object.FindObjectsOfType<MonoBehaviour>()
             .Where(mb => mb.GetType().Name == "WallItem").ToArray();
+        var wallMountables = Object.FindObjectsOfType<MonoBehaviour>()
+            .Where(mb => mb.GetType().Name == "WallMountableItem").ToArray();
         
         EditorGUILayout.LabelField($"Furniture in scene: {furniture.Length}");
         EditorGUILayout.LabelField($"Walls in scene: {wallComponents.Length}");
+        EditorGUILayout.LabelField($"Wall Mountables in scene: {wallMountables.Length}");
         
-        if (furniture.Length > 0 || wallComponents.Length > 0)
+        if (furniture.Length > 0 || wallComponents.Length > 0 || wallMountables.Length > 0)
         {
             EditorGUILayout.BeginHorizontal();
             if (furniture.Length > 0 && GUILayout.Button("Select All Furniture"))
@@ -1440,6 +1669,17 @@ public class GridPreviewSystem : EditorWindow
             if (wallComponents.Length > 0 && GUILayout.Button("Select All Walls"))
             {
                 Selection.objects = wallComponents.Cast<Object>().ToArray();
+            }
+            EditorGUILayout.EndHorizontal();
+            
+            EditorGUILayout.BeginHorizontal();
+            if (wallMountables.Length > 0 && GUILayout.Button("Select All Wall Mountables"))
+            {
+                Selection.objects = wallMountables.Cast<Object>().ToArray();
+            }
+            if (wallMountables.Length > 0 && GUILayout.Button("Validate Wall Mountables"))
+            {
+                ValidateWallMountables(wallMountables);
             }
             EditorGUILayout.EndHorizontal();
             
@@ -1487,6 +1727,43 @@ public class GridPreviewSystem : EditorWindow
         else
         {
             Debug.Log("No overlapping furniture found. All positions are valid!");
+        }
+    }
+    
+    /// <summary>
+    /// 验证墙面挂载物体的有效性
+    /// </summary>
+    private static void ValidateWallMountables(MonoBehaviour[] wallMountables)
+    {
+        int validCount = 0;
+        int invalidCount = 0;
+        var invalidItems = new List<MonoBehaviour>();
+        
+        foreach (var item in wallMountables)
+        {
+            // 使用反射调用 IsValidPosition 方法
+            var isValidMethod = item.GetType().GetMethod("IsValidPosition");
+            bool isValid = isValidMethod != null ? (bool)isValidMethod.Invoke(item, null) : true;
+            
+            if (isValid)
+            {
+                validCount++;
+            }
+            else
+            {
+                invalidCount++;
+                invalidItems.Add(item);
+            }
+        }
+        
+        if (invalidCount > 0)
+        {
+            Debug.LogWarning($"Found {invalidCount} invalid wall mountable items!");
+            Selection.objects = invalidItems.Cast<Object>().ToArray();
+        }
+        else
+        {
+            Debug.Log($"All {validCount} wall mountable items are in valid positions!");
         }
     }
     
@@ -1597,6 +1874,11 @@ public class GridPreviewSystem : EditorWindow
         cachedFurniture = Object.FindObjectsOfType<FurnitureItem>();
         cachedWalls = Object.FindObjectsOfType<WallItem>().Cast<MonoBehaviour>().ToArray();
         cachedFloors = Object.FindObjectsOfType<FloorItem>().Cast<MonoBehaviour>().ToArray();
+        
+        // 使用反射查找 WallMountableItem 组件
+        var wallMountableComponents = Object.FindObjectsOfType<MonoBehaviour>()
+            .Where(mb => mb.GetType().Name == "WallMountableItem").ToArray();
+        cachedWallMountables = wallMountableComponents;
     }
     
     /// <summary>
@@ -1607,6 +1889,7 @@ public class GridPreviewSystem : EditorWindow
         cachedFurniture = null;
         cachedWalls = null;
         cachedFloors = null;
+        cachedWallMountables = null;
         lastComponentCacheTime = 0;
     }
     
