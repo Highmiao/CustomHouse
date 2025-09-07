@@ -230,4 +230,72 @@ public class WallMountSystemExample : MonoBehaviour
         
         Debug.Log($"Validation complete: {validCount} valid, {invalidCount} invalid wall mountables");
     }
+    
+    /// <summary>
+    /// 演示如何手动移动墙面挂载物体
+    /// </summary>
+    [ContextMenu("Demo: Move Wall Mountables")]
+    public void DemoMoveWallMountables()
+    {
+        var wallMountables = FindObjectsOfType<WallMountableItem>();
+        
+        foreach (var item in wallMountables)
+        {
+            // 随机移动到新位置
+            Vector2Int randomPos = new Vector2Int(
+                Random.Range(0, 10),
+                Random.Range(0, 10)
+            );
+            
+            // 随机选择墙面方向
+            WallDirection[] directions = { WallDirection.North, WallDirection.East, WallDirection.South, WallDirection.West };
+            WallDirection randomDirection = directions[Random.Range(0, directions.Length)];
+            
+            item.SetMountPosition(randomPos, randomDirection);
+            
+            Debug.Log($"Moved {item.name} to ({randomPos.x}, {randomPos.y}) facing {randomDirection}");
+        }
+    }
+    
+    /// <summary>
+    /// 同步所有墙面挂载物体的位置
+    /// </summary>
+    [ContextMenu("Sync Wall Mountable Positions")]
+    public void SyncWallMountablePositions()
+    {
+        var wallMountables = FindObjectsOfType<WallMountableItem>();
+        
+        foreach (var item in wallMountables)
+        {
+            // 强制从 Transform 位置更新挂载位置
+            var gridSystem = item.GridSystem;
+            if (gridSystem != null)
+            {
+                Vector2Int gridPos = gridSystem.WorldToGridIgnoreHeight(item.transform.position);
+                var nearestWall = item.GetType().GetMethod("FindNearestWall", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                
+                if (nearestWall != null)
+                {
+                    var wall = nearestWall.Invoke(item, new object[] { gridPos });
+                    if (wall != null)
+                    {
+                        var wallConfigField = wall.GetType().GetField("WallConfig");
+                        if (wallConfigField != null)
+                        {
+                            var wallConfig = wallConfigField.GetValue(wall);
+                            var directionField = wallConfig.GetType().GetField("direction");
+                            if (directionField != null)
+                            {
+                                var direction = (WallDirection)directionField.GetValue(wallConfig);
+                                item.SetMountPosition(gridPos, direction);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Debug.Log($"Synchronized {wallMountables.Length} wall mountable positions");
+    }
 }

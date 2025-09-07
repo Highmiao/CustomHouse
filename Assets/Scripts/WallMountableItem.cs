@@ -6,6 +6,12 @@ using System.Linq;
 using UnityEditor;
 #endif
 
+public enum SurfaceType
+{
+    Horizontal, // 水平表面（如架子）
+    Vertical    // 垂直表面（如镜子）
+}
+
 [System.Serializable]
 public class WallMountConfig
 {
@@ -27,6 +33,7 @@ public class WallMountConfig
     
     [Header("Surface Provision")]
     public bool providesSurface = false; // 是否提供表面（如挂壁架子）
+    public SurfaceType surfaceType = SurfaceType.Horizontal; // 表面类型
     public Vector2Int surfaceSize = Vector2Int.one; // 提供的表面大小
     public Vector2Int surfaceOffset = Vector2Int.zero; // 表面相对于挂载点的偏移
     public float surfaceProtrusion = 0.5f; // 表面向外突出的距离
@@ -83,6 +90,36 @@ public class WallMountableItem : MonoBehaviour
             AlignToNearestWall();
         }
     }
+    
+    void Update()
+    {
+        // 在编辑器中，如果 GameObject 位置改变，自动更新挂载位置
+#if UNITY_EDITOR
+        if (!Application.isPlaying && GridSystem != null)
+        {
+            UpdateMountPositionFromTransform();
+        }
+#endif
+    }
+    
+#if UNITY_EDITOR
+    void OnValidate()
+    {
+        // 当组件属性在 Inspector 中被修改时调用
+        if (GridSystem != null)
+        {
+            // 重新计算世界位置
+            float height = GridSystem.GetHeightForLevel(mountConfig.mountHeightLevel) + mountConfig.heightOffset;
+            Vector3 worldPos = GridSystem.GridToWorld(mountPosition, height);
+            
+            // 如果不在播放模式，更新 transform 位置
+            if (!Application.isPlaying)
+            {
+                transform.position = worldPos;
+            }
+        }
+    }
+#endif
     
     /// <summary>
     /// 检查当前位置是否有效（是否有合适的墙面可以挂载）
@@ -281,6 +318,39 @@ public class WallMountableItem : MonoBehaviour
     }
     
     /// <summary>
+    /// 根据 GameObject 的 Transform 位置更新挂载位置
+    /// </summary>
+    private void UpdateMountPositionFromTransform()
+    {
+        if (GridSystem == null) return;
+        
+        // 将世界坐标转换为网格坐标
+        Vector2Int newGridPos = GridSystem.WorldToGridIgnoreHeight(transform.position);
+        
+        // 如果位置发生变化，更新挂载位置
+        if (newGridPos != mountPosition)
+        {
+            var previousPosition = mountPosition;
+            mountPosition = newGridPos;
+            
+            // 尝试找到这个位置最合适的墙面
+            var nearestWall = FindNearestWall(mountPosition);
+            if (nearestWall != null)
+            {
+                mountDirection = nearestWall.WallConfig.direction;
+            }
+            
+            // 如果在编辑器中，标记场景为脏状态
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+#endif
+        }
+    }
+    
+    /// <summary>
     /// 自动对齐到最近的墙面
     /// </summary>
     private void AlignToNearestWall()
@@ -347,6 +417,14 @@ public class WallMountableItem : MonoBehaviour
             float height = GridSystem.GetHeightForLevel(mountConfig.mountHeightLevel) + mountConfig.heightOffset;
             Vector3 worldPos = GridSystem.GridToWorld(mountPosition, height);
             transform.position = worldPos;
+            
+#if UNITY_EDITOR
+            // 在编辑器中标记为脏状态
+            if (!Application.isPlaying)
+            {
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+#endif
         }
     }
     
@@ -360,9 +438,14 @@ public class WallMountableItem : MonoBehaviour
     }
     
 #if UNITY_EDITOR
+    // 注释掉OnDrawGizmos，让GridPreviewSystem统一处理绘制
+    /*
     void OnDrawGizmos()
     {
         if (!mountConfig.showInSceneView || GridSystem == null) return;
+        
+        // 确保挂载位置与 GameObject 位置同步
+        UpdateMountPositionFromTransform();
         
         // 绘制挂载区域
         DrawMountArea();
@@ -373,56 +456,224 @@ public class WallMountableItem : MonoBehaviour
             DrawProvidedSurface();
         }
         
-        // 绘制连接线
-        DrawMountConnection();
+        // 绘制连接线和调试信息
+        DrawDebugInfo();
     }
+    */
     
     private void DrawMountArea()
     {
         Color originalColor = Gizmos.color;
-        Gizmos.color = mountConfig.mountColor;
+        bool isValid = IsValidPosition();
+        
+        // 设置红色用于挂载区域
+        Gizmos.color = isValid ? Color.red : Color.red;
         
         var positions = GetWallOccupiedGridPositions();
         float height = GetMountWorldHeight();
         
         foreach (var gridPos in positions)
         {
-            Vector3 worldPos = GridSystem.GridToWorld(gridPos, height);
-            Gizmos.DrawWireCube(worldPos + Vector3.up * 0.1f, new Vector3(0.8f, 0.2f, 0.8f));
+            // 使用与GridPreviewSystem相同的墙面网格绘制逻辑
+            DrawWallGridOccupancy(gridPos, mountDirection, height);
         }
         
         Gizmos.color = originalColor;
     }
-    
+
+    /// <summary>
+    /// 绘制墙面网格占用区域 - 使用与GridPreviewSystem相同的逻辑
+    /// </summary>
+    private void DrawWallGridOccupancy(Vector2Int gridPos, WallDirection direction, float height)
+    {
+        // 使用与GridPreviewSystem完全相同的方法 - GetWallSurfaceCornersAtHeight
+        Vector3[] corners = GetWallSurfaceCornersAtHeight(gridPos, height, direction);
+        if (corners.Length == 4)
+        {
+            // 绘制线框 - 使用Gizmos模拟Handles.DrawAAPolyLine的效果
+            Gizmos.DrawLine(corners[0], corners[1]);
+            Gizmos.DrawLine(corners[1], corners[2]);
+            Gizmos.DrawLine(corners[2], corners[3]);
+            Gizmos.DrawLine(corners[3], corners[0]);
+            
+            // 在网格中心绘制一个小球，帮助调试对齐
+            Vector3 center = (corners[0] + corners[1] + corners[2] + corners[3]) / 4f;
+            Gizmos.DrawWireSphere(center, 0.05f);
+        }
+    }
+
+    /// <summary>
+    /// 获取墙面格子的角点 - 与GridPreviewSystem完全一致
+    /// </summary>
+    private Vector3[] GetWallSurfaceCornersAtHeight(Vector2Int gridPos, float height, WallDirection wallDirection)
+    {
+        if (GridSystem == null) return new Vector3[0];
+        
+        float heightPerLevel = GridSystem.Settings.heightPerLevel;
+        
+        // 根据墙面方向确定墙面格子的形状
+        Vector3 bottomLeft, bottomRight, topLeft, topRight;
+        
+        switch (wallDirection)
+        {
+            case WallDirection.North:
+            case WallDirection.South:
+                // 南北墙：墙面格子的顶边平行于等距投影的南北向边
+                bottomLeft = GridSystem.GridToWorld(gridPos, height);
+                bottomRight = GridSystem.GridToWorld(gridPos + Vector2Int.up, height);
+                topLeft = GridSystem.GridToWorld(gridPos, height + heightPerLevel);
+                topRight = GridSystem.GridToWorld(gridPos + Vector2Int.up, height + heightPerLevel);
+                break;
+                
+            case WallDirection.East:
+            case WallDirection.West:
+                // 东西墙：墙面格子的顶边平行于等距投影的东西向边
+                bottomLeft = GridSystem.GridToWorld(gridPos, height);
+                bottomRight = GridSystem.GridToWorld(gridPos + Vector2Int.right, height);
+                topLeft = GridSystem.GridToWorld(gridPos, height + heightPerLevel);
+                topRight = GridSystem.GridToWorld(gridPos + Vector2Int.right, height + heightPerLevel);
+                break;
+                
+            default:
+                // 默认情况，使用原来的逻辑
+                bottomLeft = GridSystem.GridToWorld(gridPos, height);
+                bottomRight = GridSystem.GridToWorld(gridPos + Vector2Int.right, height);
+                topLeft = GridSystem.GridToWorld(gridPos, height + heightPerLevel);
+                topRight = GridSystem.GridToWorld(gridPos + Vector2Int.right, height + heightPerLevel);
+                break;
+        }
+        
+        return new Vector3[] { bottomLeft, bottomRight, topRight, topLeft };
+    }
+
     private void DrawProvidedSurface()
     {
+        if (!mountConfig.providesSurface) return;
+        
         Color originalColor = Gizmos.color;
-        Gizmos.color = mountConfig.surfaceColor;
         
-        var positions = GetProvidedSurfacePositions();
-        float height = GetMountWorldHeight() + mountConfig.surfaceProtrusion;
+        // 设置绿色用于提供的表面
+        Gizmos.color = Color.green;
         
-        foreach (var gridPos in positions)
+        var surfacePositions = GetProvidedSurfacePositions();
+        float surfaceHeight = GetMountWorldHeight() + mountConfig.surfaceProtrusion;
+        
+        foreach (var gridPos in surfacePositions)
         {
-            Vector3 worldPos = GridSystem.GridToWorld(gridPos, height);
-            Gizmos.DrawWireCube(worldPos + Vector3.up * 0.2f, new Vector3(0.9f, 0.1f, 0.9f));
+            if (mountConfig.surfaceType == SurfaceType.Horizontal)
+            {
+                // 水平表面 - 使用地面网格绘制逻辑
+                DrawFloorGridOccupancy(gridPos, surfaceHeight);
+            }
+            else
+            {
+                // 垂直表面 - 使用墙面网格绘制逻辑
+                DrawWallGridOccupancy(gridPos, mountDirection, surfaceHeight);
+            }
         }
         
         Gizmos.color = originalColor;
     }
+
+    /// <summary>
+    /// 绘制地面网格占用区域 - 使用与GridPreviewSystem相同的逻辑
+    /// </summary>
+    private void DrawFloorGridOccupancy(Vector2Int gridPos, float height)
+    {
+        // 使用与GridPreviewSystem相同的地面网格绘制逻辑
+        Vector3[] corners = GetGridCellCornersAtHeight(gridPos, height);
+        if (corners.Length == 4)
+        {
+            // 绘制线框
+            Gizmos.DrawLine(corners[0], corners[1]);
+            Gizmos.DrawLine(corners[1], corners[2]);
+            Gizmos.DrawLine(corners[2], corners[3]);
+            Gizmos.DrawLine(corners[3], corners[0]);
+        }
+    }
+
+    /// <summary>
+    /// 获取地面格子的角点 - 与GridPreviewSystem保持一致
+    /// </summary>
+    private Vector3[] GetGridCellCornersAtHeight(Vector2Int gridPos, float height)
+    {
+        if (GridSystem == null) return new Vector3[0];
+        
+        Vector3 bottomLeft = GridSystem.GridToWorld(gridPos, height);
+        Vector3 bottomRight = GridSystem.GridToWorld(gridPos + Vector2Int.right, height);
+        Vector3 topRight = GridSystem.GridToWorld(gridPos + Vector2Int.one, height);
+        Vector3 topLeft = GridSystem.GridToWorld(gridPos + Vector2Int.up, height);
+        
+        return new Vector3[] { bottomLeft, bottomRight, topRight, topLeft };
+    }
     
-    private void DrawMountConnection()
+    private void DrawDebugInfo()
     {
         Color originalColor = Gizmos.color;
-        Gizmos.color = Color.yellow;
         
+        // 绘制到挂载点的连接线
+        Gizmos.color = Color.yellow;
         Vector3 itemPos = transform.position;
         Vector3 mountPos = GridSystem.GridToWorld(mountPosition, GetMountWorldHeight());
         
         Gizmos.DrawLine(itemPos, mountPos);
         Gizmos.DrawWireSphere(mountPos, 0.1f);
         
+        // 绘制方向指示器
+        Gizmos.color = Color.blue;
+        Vector3 directionOffset = GetDirectionVector() * 0.5f;
+        Gizmos.DrawRay(mountPos, directionOffset);
+        
+        // 绘制网格坐标文本（仅在选中时）
+        if (UnityEditor.Selection.activeGameObject == gameObject)
+        {
+            var style = new GUIStyle();
+            style.normal.textColor = Color.white;
+            style.fontSize = 12;
+            
+            Vector3 labelPos = mountPos + Vector3.up * 0.5f;
+            string info = $"Mount: ({mountPosition.x}, {mountPosition.y})\\n" +
+                         $"Direction: {mountDirection}\\n" +
+                         $"Height: L{mountConfig.mountHeightLevel}\\n" +
+                         $"Valid: {(IsValidPosition() ? "✓" : "✗")}";
+            
+            UnityEditor.Handles.Label(labelPos, info, style);
+        }
+        
         Gizmos.color = originalColor;
+    }
+    
+    /// <summary>
+    /// 根据墙面方向获取 Gizmo 的大小
+    /// </summary>
+    private Vector3 GetGizmoSizeForWallDirection()
+    {
+        switch (mountDirection)
+        {
+            case WallDirection.North:
+            case WallDirection.South:
+                return new Vector3(0.8f, 0.2f, 0.1f); // 东西方向较宽
+            case WallDirection.East:
+            case WallDirection.West:
+                return new Vector3(0.1f, 0.2f, 0.8f); // 南北方向较宽
+            default:
+                return new Vector3(0.8f, 0.2f, 0.8f);
+        }
+    }
+    
+    /// <summary>
+    /// 获取方向向量
+    /// </summary>
+    private Vector3 GetDirectionVector()
+    {
+        switch (mountDirection)
+        {
+            case WallDirection.North: return Vector3.forward;
+            case WallDirection.East: return Vector3.right;
+            case WallDirection.South: return Vector3.back;
+            case WallDirection.West: return Vector3.left;
+            default: return Vector3.forward;
+        }
     }
 #endif
 }
