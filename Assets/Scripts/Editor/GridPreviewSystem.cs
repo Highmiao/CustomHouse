@@ -506,35 +506,45 @@ public class GridPreviewSystem : EditorWindow
             
             // 获取挂载高度
             var getHeightMethod = itemType.GetMethod("GetMountWorldHeight");
-            float height = getHeightMethod != null ? (float)getHeightMethod.Invoke(wallMountItem, null) : 0f;
+            float baseHeight = getHeightMethod != null ? (float)getHeightMethod.Invoke(wallMountItem, null) : 0f;
+            
+            // 获取高度层级数（支持gridSize.y）
+            var getHeightLevelsMethod = itemType.GetMethod("GetWallHeightLevels");
+            int heightLevels = getHeightLevelsMethod != null ? (int)getHeightLevelsMethod.Invoke(wallMountItem, null) : 1;
             
             // 获取挂载方向
             var directionProperty = itemType.GetProperty("MountDirection");
             var direction = directionProperty != null ? directionProperty.GetValue(wallMountItem) : null;
             
-            foreach (var gridPos in positions)
+            // 循环处理每个高度层级
+            for (int level = 0; level < heightLevels; level++)
             {
-                // 对于墙面挂载物，使用特殊的墙面格子形状
-                Vector3[] corners;
-                if (direction != null)
+                float height = baseHeight + level * currentGridSystem.Settings.heightPerLevel;
+                
+                foreach (var gridPos in positions)
                 {
-                    // 尝试转换枚举值
-                    if (System.Enum.TryParse(direction.ToString(), out WallDirection wallDir))
+                    // 对于墙面挂载物，使用特殊的墙面格子形状
+                    Vector3[] corners;
+                    if (direction != null)
                     {
-                        corners = GetWallSurfaceCornersAtHeight(gridPos, height, wallDir);
+                        // 尝试转换枚举值
+                        if (System.Enum.TryParse(direction.ToString(), out WallDirection wallDir))
+                        {
+                            corners = GetWallSurfaceCornersAtHeight(gridPos, height, wallDir);
+                        }
+                        else
+                        {
+                            corners = GetGridCellCornersAtHeight(gridPos, height);
+                        }
                     }
                     else
                     {
                         corners = GetGridCellCornersAtHeight(gridPos, height);
                     }
+                    
+                    AddQuadToBatch(fillBatch, corners);
+                    AddQuadBorderToBatch(borderBatch, corners);
                 }
-                else
-                {
-                    corners = GetGridCellCornersAtHeight(gridPos, height);
-                }
-                
-                AddQuadToBatch(fillBatch, corners);
-                AddQuadBorderToBatch(borderBatch, corners);
             }
         }
         
@@ -591,10 +601,10 @@ public class GridPreviewSystem : EditorWindow
             float baseHeight = getHeightMethod != null ? (float)getHeightMethod.Invoke(wallMountItem, null) : 0f;
             
             // 获取表面突出距离
-            var protrusionField = configType.GetField("surfaceProtrusion");
-            float protrusion = protrusionField != null ? (float)protrusionField.GetValue(config) : 0.5f;
+            // var protrusionField = configType.GetField("surfaceProtrusion");
+            // float protrusion = protrusionField != null ? (float)protrusionField.GetValue(config) : 0.5f;
             
-            float surfaceHeight = baseHeight + protrusion;
+            float surfaceHeight = baseHeight;
             
             foreach (var gridPos in surfacePositions)
             {

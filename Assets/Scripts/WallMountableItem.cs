@@ -170,22 +170,70 @@ public class WallMountableItem : MonoBehaviour
             // 使用自定义形状
             foreach (var shapeOffset in mountConfig.customShape)
             {
-                positions.Add(mountPosition + mountConfig.gridOffset + shapeOffset);
+                Vector2Int wallSpaceOffset = TransformWallSpaceToGridSpace(shapeOffset.x, 0); // 只处理水平偏移
+                positions.Add(mountPosition + mountConfig.gridOffset + wallSpaceOffset);
             }
         }
         else
         {
-            // 使用矩形大小
+            // 使用矩形大小 - 只处理水平分布，垂直分布通过GetWallHeightLevels处理
             for (int x = 0; x < mountConfig.gridSize.x; x++)
             {
-                for (int y = 0; y < mountConfig.gridSize.y; y++)
-                {
-                    positions.Add(mountPosition + mountConfig.gridOffset + new Vector2Int(x, y));
-                }
+                Vector2Int gridSpacePos = TransformWallSpaceToGridSpace(x, 0);
+                positions.Add(mountPosition + mountConfig.gridOffset + gridSpacePos);
             }
         }
         
         return positions;
+    }
+
+    /// <summary>
+    /// 获取挂载物占用的高度层级数（用于支持垂直方向的gridSize.y）
+    /// </summary>
+    public int GetWallHeightLevels()
+    {
+        if (mountConfig.useCustomShape && mountConfig.customShape.Count > 0)
+        {
+            // 对于自定义形状，计算Y方向的范围
+            int minY = mountConfig.customShape.Min(pos => pos.y);
+            int maxY = mountConfig.customShape.Max(pos => pos.y);
+            return maxY - minY + 1;
+        }
+        else
+        {
+            // 使用gridSize.y作为垂直层级数
+            return mountConfig.gridSize.y;
+        }
+    }
+
+    /// <summary>
+    /// 将墙面空间坐标转换为网格空间坐标
+    /// wallX: 墙面水平方向的偏移
+    /// wallY: 墙面垂直方向的偏移（暂时未使用，通过mountHeightLevel处理）
+    /// </summary>
+    private Vector2Int TransformWallSpaceToGridSpace(int wallX, int wallY)
+    {
+        switch (mountDirection)
+        {
+            case WallDirection.North:
+                // 北墙：墙面水平方向对应网格Y轴正方向
+                return new Vector2Int(0, wallX);
+                
+            case WallDirection.East:
+                // 东墙：墙面水平方向对应网格X轴正方向
+                return new Vector2Int(wallX, 0);
+                
+            case WallDirection.South:
+                // 南墙：墙面水平方向对应网格Y轴负方向
+                return new Vector2Int(0, -wallX);
+                
+            case WallDirection.West:
+                // 西墙：墙面水平方向对应网格X轴负方向
+                return new Vector2Int(-wallX, 0);
+                
+            default:
+                return new Vector2Int(wallX, wallY);
+        }
     }
     
     /// <summary>
@@ -205,7 +253,13 @@ public class WallMountableItem : MonoBehaviour
         {
             for (int y = 0; y < mountConfig.surfaceSize.y; y++)
             {
-                Vector2Int surfacePos = basePosition + new Vector2Int(x, y) + surfaceDirection;
+                // x: 沿着墙面水平方向（需要空间转换）
+                Vector2Int horizontalOffset = TransformWallSpaceToGridSpace(x, 0);
+                
+                // y: 沿着向墙面内侧突出的方向（深度）
+                Vector2Int depthOffset = surfaceDirection * (y + 1);
+                
+                Vector2Int surfacePos = basePosition + horizontalOffset + depthOffset;
                 positions.Add(surfacePos);
             }
         }
@@ -214,16 +268,16 @@ public class WallMountableItem : MonoBehaviour
     }
     
     /// <summary>
-    /// 获取表面突出的方向
+    /// 获取表面突出的方向（向墙面内侧）
     /// </summary>
     private Vector2Int GetSurfaceDirection()
     {
         switch (mountDirection)
         {
-            case WallDirection.North: return Vector2Int.down; // 北墙表面向南突出
-            case WallDirection.East: return Vector2Int.left;  // 东墙表面向西突出
-            case WallDirection.South: return Vector2Int.up;   // 南墙表面向北突出
-            case WallDirection.West: return Vector2Int.right; // 西墙表面向东突出
+            case WallDirection.North: return Vector2Int.left;   // 北墙表面向北突出（墙面内侧）
+            case WallDirection.East: return Vector2Int.up; // 东墙表面向东突出（墙面内侧）
+            case WallDirection.South: return Vector2Int.right; // 南墙表面向南突出（墙面内侧）
+            case WallDirection.West: return Vector2Int.down;  // 西墙表面向西突出（墙面内侧）
             default: return Vector2Int.zero;
         }
     }

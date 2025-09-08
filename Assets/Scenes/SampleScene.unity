@@ -639,11 +639,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   mountConfig:
-    gridSize: {x: 2, y: 2}
+    gridSize: {x: 3, y: 2}
     gridOffset: {x: 0, y: 0}
     customShape: []
     useCustomShape: 0
-    mountHeightLevel: 1
+    mountHeightLevel: 10
     heightOffset: 0
     canMountOnNorth: 1
     canMountOnEast: 1
@@ -651,7 +651,7 @@ MonoBehaviour:
     canMountOnWest: 1
     providesSurface: 1
     surfaceType: 1
-    surfaceSize: {x: 3, y: 1}
+    surfaceSize: {x: 3, y: 2}
     surfaceOffset: {x: 0, y: 0}
     surfaceProtrusion: 0.5
     mountColor: {r: 1, g: 0.5, b: 0, a: 0.7}
@@ -659,7 +659,7 @@ MonoBehaviour:
     showInSceneView: 1
     showSurfaceInSceneView: 1
   gridSystem: {fileID: 1690377877}
-  mountPosition: {x: 50, y: 37}
+  mountPosition: {x: 42, y: 28}
   mountDirection: 0
 --- !u!4 &1046460041
 Transform:
@@ -670,7 +670,7 @@ Transform:
   m_GameObject: {fileID: 1046460039}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 6.5, y: 12.25, z: 0}
+  m_LocalPosition: {x: 7, y: 12.5, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -951,6 +951,73 @@ MonoBehaviour:
     showInSceneView: 1
     showSurfaceInSceneView: 1
   gridSystem: {fileID: 1690377877}
+--- !u!1 &1627093398
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1627093400}
+  - component: {fileID: 1627093399}
+  m_Layer: 0
+  m_Name: Mountable (1)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1627093399
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1627093398}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ea95866e485bb5a4283124e16f8c39eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mountConfig:
+    gridSize: {x: 3, y: 2}
+    gridOffset: {x: 0, y: 0}
+    customShape: []
+    useCustomShape: 0
+    mountHeightLevel: 7
+    heightOffset: 0
+    canMountOnNorth: 1
+    canMountOnEast: 1
+    canMountOnSouth: 1
+    canMountOnWest: 1
+    providesSurface: 1
+    surfaceType: 0
+    surfaceSize: {x: 3, y: 2}
+    surfaceOffset: {x: 0, y: 0}
+    surfaceProtrusion: 0.5
+    mountColor: {r: 1, g: 0.5, b: 0, a: 0.7}
+    surfaceColor: {r: 0, g: 1, b: 0.5, a: 0.5}
+    showInSceneView: 1
+    showSurfaceInSceneView: 1
+  gridSystem: {fileID: 1690377877}
+  mountPosition: {x: 31, y: 43}
+  mountDirection: 3
+--- !u!4 &1627093400
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1627093398}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -6, y: 12, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1627381110
 GameObject:
   m_ObjectHideFlags: 0
@@ -1534,3 +1601,4 @@ SceneRoots:
   - {fileID: 1627381112}
   - {fileID: 1325234542}
   - {fileID: 1046460041}
+  - {fileID: 1627093400}
